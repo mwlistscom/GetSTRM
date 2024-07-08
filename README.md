@@ -1,5 +1,4 @@
-
-\# GetSTRM
+# GetSTRM
 
 GetSTRM manages the directory structure for your Emby/JellyFin strm files. By default it adds the dicrectory structure for every STRM in your m3u IPTV playlist.
 
@@ -11,7 +10,7 @@ For this reason, do not use this with existing directories with media files.
 
 Need help ? Contact us on https://www.facebook.com/rockmym3u or email help@rockmym3u.com
 
-\# Setup
+# Setup
 
 See release for binaries for Windows or Linux
 
@@ -21,7 +20,7 @@ Without any parameters GetSTRM will create a sample sample\_config.json file, re
 
 the variables within. This is a JSON standard file do not add comments.
 
-\# Usage
+# Usage
 
 Usage: GetSTRM [options]
 
@@ -99,7 +98,7 @@ Display the version information
 
 Show help message
 
-\# License
+# License
 
 Copyright (c) 2024 Jules Potvin
 
