@@ -14,7 +14,7 @@ Need help ? Contact us on https://www.facebook.com/rockmym3u or email help@rockm
  Without any parameters GetSTRM will create a sample sample_config.json file, rename this file and edit
  the variables within. This is a JSON standard file do not add comments.
  
-# Usage
+# Command Line
 Usage: GetSTRM [options]
 Options:
   -config string
