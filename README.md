@@ -20,41 +20,41 @@ Need help ? Contact us on https://www.facebook.com/rockmym3u or email help@rockm
 Usage: GetSTRM [options]
 Options:
   -config string
-        Path to the configuration file
+      Path to the configuration file
   -name string
-        Name to be printed in the log file and used for config file creation
+      Name to be printed in the log file and used for config file creation
   -logLevel int
-        Log level: 0 = silent, 1 = basic information, 3 = all debug and errors (default: 1)
+      Log level: 0 = silent, 1 = basic information, 3 = all debug and errors (default: 1)
   -tvShowsDir string
-        Directory for TV shows (required)
+      Directory for TV shows (required)
   -moviesDir string
-        Directory for movies (required)
+      Directory for movies (required)
   -jsonURL string
-        URL of the JSON file (can be specified multiple times, required if no m3uURLs)
+      URL of the JSON file (can be specified multiple times, required if no m3uURLs)
   -m3u string
-        URL of the M3U file (can be specified multiple times, required if no jsonURLs)
+      URL of the M3U file (can be specified multiple times, required if no jsonURLs)
   -logFile string
-        Name of the log file (default: vod_log.txt)
+      Name of the log file (default: vod_log.txt)
   -fileType string
-        Comma separated list of valid strm file types (default: avi,flv,m4v,mkv,mkv2,mkv5,mkvv,mp4,mp41,mp42,mp44,mpg,wmv)
+      Comma separated list of valid strm file types (default: avi,flv,m4v,mkv,mkv2,mkv5,mkvv,mp4,mp41,mp42,mp44,mpg,wmv)
   -workingDir string
-        Working directory (default: current working directory)
+      Working directory (default: current working directory)
   -logDir string
-        Directory for log files (default: workingDir/Log)
+      Directory for log files (default: workingDir/Log)
   -keep int
-        Set to 1 to keep downloaded files, 0 to delete (default: 0)
+      Set to 1 to keep downloaded files, 0 to delete (default: 0)
   -keepDir string
-        Directory to keep downloaded files (overrides default)
+      Directory to keep downloaded files (overrides default)
   -excludeGroup string
-        Comma separated list of groups to exclude (default: null)
+      Comma separated list of groups to exclude (default: null)
   -includeGroup string
-        Comma separated list of groups to include (default: null)
+      Comma separated list of groups to include (default: null)
   -limitDelete int
-        Maximum number of .strm files to delete (default: 25)		
+      Maximum number of .strm files to delete (default: 25)		
   -version
-        Display the version information
+      Display the version information
   -help
-        Show help message
+      Show help message
 
 # License
 Copyright (c) 2024 Jules Potvin
