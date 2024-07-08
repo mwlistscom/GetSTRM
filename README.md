@@ -9,13 +9,13 @@ For this reason, do not use this with existing directories with media files.
 
 Need help ? Contact us on https://www.facebook.com/rockmym3u or email help@rockmym3u.com
 
-# Setup
+## Setup
  See release for binaries for Windows or Linux 
  Alternately install golang and execute  "go run GetSTRM.go"
  Without any parameters GetSTRM will create a sample sample_config.json file, rename this file and edit
  the variables within. This is a JSON standard file do not add comments.
  
-# Usage  
+## Usage  
 Usage: GetSTRM [options]  
 Options:  
 -config string  
@@ -55,7 +55,7 @@ Options:
 -help  
     Show help message  
 
-# License
+## License
 Copyright (c) 2024 Jules Potvin
 
 This software is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License.
