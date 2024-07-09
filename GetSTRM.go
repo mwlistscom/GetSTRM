@@ -340,7 +340,7 @@ func main() {
 	printStatistics(stats)
 
 	// Write keepFiles to disk if log level is 3
-	if logLevel == 1 {
+	if logLevel == 3 {
 		err := writeKeepFilesToDisk()
 		if err != nil {
 			logError("Error writing keepFiles to disk:", err)
