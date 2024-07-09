@@ -863,7 +863,9 @@ func logMessage(message string) {
 }
 
 func showHelp() {
-	fmt.Println(`Usage: GetSTRM [options]
+	fmt.Println(`
+
+Usage: GetSTRM [options]
 Options:
   -config string
         Path to the configuration file
@@ -906,16 +908,6 @@ Options:
   -help
         Show help message
 
-Documentation:
- GetSTRM will create .strm files for Emby or Plex.  Every time it downloads a new url it will compare to the current directory stucture
-  and delete any .strm files not in the URL.  Note that the limitDelete variable is set to 25. GetSTRM will delete no more 
-  then 25 .strm files per run. This way if there is an issue your entire library will not be delted. GetSTRM will abort if there is an
-  issue downloading the url.  
- String parameters should be placed in quotes 
- Use any combination of m2u or json url from ROCKYMYM3U.COM. In the config file use json array format, for example ["http:/url1","http:/url2"]
- when you have multiple sources. Only run GetSTRM with all the required urls for the tv or movie directory (each new run with the same tv movie
- directory will delete the previous files, or at least 25 of them)
- 
 Examples:
   go run script_name.go -config "config.json"
   go run script_name.go -name MyStreamApp -tvShowsDir /path/to/tvshows -moviesDir /path/to/movies -jsonURL http://example.com/file.json -logFile mylog.txt`)
@@ -960,6 +952,7 @@ func createDefaultConfig() {
 		os.MkdirAll(moviesDir, os.ModePerm)
 		fmt.Println("Created directory:", moviesDir)
 	}
+
 	if _, err := os.Stat(downloadDir); os.IsNotExist(err) {
 		os.MkdirAll(downloadDir, os.ModePerm)
 		fmt.Println("Created directory:", downloadDir)
@@ -974,7 +967,7 @@ func createDefaultConfig() {
 		LogLevel:       1,
 		RetainDownload: 0,
 		LimitDelete:    25,
-		DownloadDir:    "",
+		DownloadDir:    downloadDir,
 		TvShowsDir:     tvShowsDir,
 		MoviesDir:      moviesDir,
 		JsonURLs:       []string{},
