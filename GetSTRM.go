@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -40,21 +41,23 @@ type Stream struct {
 }
 
 type Config struct {
-	Name         string   `json:"name"`
-	LogLevel     int      `json:"logLevel"`
-	TvShowsDir   string   `json:"tvShowsDir"`
-	MoviesDir    string   `json:"moviesDir"`
-	JsonURLs     []string `json:"jsonURLs"`
-	M3UURLs      []string `json:"m3uURLs"`
-	LogFile      string   `json:"logFile"`
-	FileType     string   `json:"fileType"`
-	WorkingDir   string   `json:"workingDir"`
-	LogDir       string   `json:"logDir"`
-	ExcludeGroup string   `json:"excludeGroup"`
-	IncludeGroup string   `json:"includeGroup"`
-	Keep         int      `json:"keep"`
-	KeepDir      string   `json:"keepDir"`
-	LimitDelete  int      `json:"limitDelete"`
+	Name           string   `json:"name"`
+	LogLevel       int      `json:"logLevel"`
+	TvShowsDir     string   `json:"tvShowsDir"`
+	MoviesDir      string   `json:"moviesDir"`
+	JsonURLs       []string `json:"jsonURLs"`
+	M3UURLs        []string `json:"m3uURLs"`
+	LogFile        string   `json:"logFile"`
+	FileType       string   `json:"fileType"`
+	WorkingDir     string   `json:"workingDir"`
+	LogDir         string   `json:"logDir"`
+	RetainDownload int      `json:"retainDownload"`
+	DownloadDir    string   `json:"downloadDir"`
+	LimitDelete    int      `json:"limitDelete"`
+	UseGroup       int      `json:"useGroup"`
+	DefaultGroup   string   `json:"defaultGroup"`
+	ExcludeGroup   string   `json:"excludeGroup"`
+	IncludeGroup   string   `json:"includeGroup"`
 }
 
 var (
@@ -68,16 +71,17 @@ var (
 	fileTypes        []string
 	workingDir       string
 	logDir           string
-	excludeGroup     []string
-	includeGroup     []string
 	createdDirs      int
 	keptStrmFiles    int
 	removedStrmFiles int
 	removedEmptyDirs int
 	logFileHandle    *os.File
 	downloadDir      string
+	useGroup         int
+	defaultGroup     string
+	excludeGroups    []string
+	includeGroups    []string
 	keepFiles        map[string]bool // Declare keepFiles here
-
 )
 
 func main() {
@@ -93,12 +97,15 @@ func main() {
 	fileTypeFlag := flag.String("fileType", "avi,flv,m4v,mkv,mkv2,mkv5,mkvv,mp4,mp41,mp42,mp44,mpg,wmv", "Comma separated list of valid strm file types")
 	workingDirFlag := flag.String("workingDir", "", "Working directory")
 	logDirFlag := flag.String("logDir", "", "Directory for log files")
+	helpFlag := flag.Bool("help", false, "Show help message")
+	retainDownloadFlag := flag.Int("retainDownload", 0, "Set to 1 to keep downloaded files, 0 to delete (default: 0)")
+	downloadDirFlag := flag.String("downloadDir", "", "Directory to keep downloaded files (overrides default)")
+	limitDeleteFlag := flag.Int("limitDelete", 25, "Maximum number of .strm files to delete (default: 25)")
+	useGroupFlag := flag.Int("useGroup", 0, "Set to 1 to use group title in directory structure, 0 to not use (default: 0)")
+	defaultGroupFlag := flag.String("defaultGroup", "Dummy", "Default group title if useGroup is set and group is not specified (default: Dummy)")
+
 	excludeGroupFlag := flag.String("excludeGroup", "", "Comma separated list of groups to exclude")
 	includeGroupFlag := flag.String("includeGroup", "", "Comma separated list of groups to include")
-	helpFlag := flag.Bool("help", false, "Show help message")
-	keepFlag := flag.Int("keep", 0, "Set to 1 to keep downloaded files, 0 to delete (default: 0)")
-	keepDirFlag := flag.String("keepDir", "", "Directory to keep downloaded files (overrides default)")
-	limitDeleteFlag := flag.Int("limitDelete", 25, "Maximum number of .strm files to delete (default: 25)")
 
 	versionFlag := flag.Bool("version", false, "Display the version information")
 
@@ -179,21 +186,28 @@ func main() {
 	if *logDirFlag != "" {
 		config.LogDir = *logDirFlag
 	}
+	if *retainDownloadFlag != 0 {
+		config.RetainDownload = *retainDownloadFlag
+	}
+	if *downloadDirFlag != "" {
+		config.DownloadDir = *downloadDirFlag
+	}
+	if *limitDeleteFlag != 25 {
+		config.LimitDelete = *limitDeleteFlag
+	}
+	if *useGroupFlag != 0 {
+		config.UseGroup = *useGroupFlag
+	}
+	if *defaultGroupFlag != "Dummy" {
+		config.DefaultGroup = *defaultGroupFlag
+	}
 	if *excludeGroupFlag != "" {
 		config.ExcludeGroup = *excludeGroupFlag
 	}
 	if *includeGroupFlag != "" {
 		config.IncludeGroup = *includeGroupFlag
 	}
-	if *keepFlag != 0 {
-		config.Keep = *keepFlag
-	}
-	if *keepDirFlag != "" {
-		config.KeepDir = *keepDirFlag
-	}
-	if *limitDeleteFlag != 25 {
-		config.LimitDelete = *limitDeleteFlag
-	}
+
 	// Ensure all required parameters are set
 	missingParams := []string{}
 	if config.TvShowsDir == "" {
@@ -232,16 +246,15 @@ func main() {
 		fmt.Println("Created log directory:", config.LogDir)
 	}
 
-	// Set downloadDir and keepDir
-	if config.KeepDir != "" {
-		downloadDir = config.KeepDir
+	// Set downloadDir and downloadDir
+	if config.DownloadDir != "" {
+		downloadDir = config.DownloadDir
 	} else {
 		downloadDir = filepath.Join(workingDir, "Download")
 		if _, err := os.Stat(downloadDir); os.IsNotExist(err) {
 			os.MkdirAll(downloadDir, os.ModePerm)
 			fmt.Println("Created directory:", downloadDir)
 		}
-
 	}
 
 	// Set configuration variables
@@ -253,6 +266,17 @@ func main() {
 	m3uURLs = config.M3UURLs
 	fileTypes = strings.Split(config.FileType, ",")
 	logDir = config.LogDir
+	useGroup = config.UseGroup
+	defaultGroup = config.DefaultGroup
+	// Ensure proper trimming, splitting, and converting to lowercase of excludeGroup and includeGroup
+	excludeGroups = filterEmptyStrings(strings.Split(strings.ToLower(strings.TrimSpace(config.ExcludeGroup)), ","))
+	includeGroups = filterEmptyStrings(strings.Split(strings.ToLower(strings.TrimSpace(config.IncludeGroup)), ","))
+
+	// Validate that includeGroup and excludeGroup do not overlap
+	if hasCommonElement(excludeGroups, includeGroups) {
+		fmt.Println("Error: includeGroup and excludeGroup cannot contain the same group names.")
+		return
+	}
 
 	if config.LogFile != "" {
 		logFile = filepath.Join(config.LogDir, config.LogFile)
@@ -271,16 +295,6 @@ func main() {
 			return
 		}
 		defer logFileHandle.Close()
-	}
-
-	// Remove empty strings from excludeGroup and includeGroup
-	excludeGroup = filterEmptyStrings(strings.Split(config.ExcludeGroup, ","))
-	includeGroup = filterEmptyStrings(strings.Split(config.IncludeGroup, ","))
-
-	// Check if a group is specified in both includeGroup and excludeGroup
-	if len(includeGroup) > 0 && len(excludeGroup) > 0 && hasCommonElement(includeGroup, excludeGroup) {
-		fmt.Println("Error: A group cannot be specified in both includeGroup and excludeGroup.")
-		return
 	}
 
 	// Log the start of the script
@@ -326,15 +340,15 @@ func main() {
 	printStatistics(stats)
 
 	// Write keepFiles to disk if log level is 3
-	if logLevel == 3 {
+	if logLevel == 1 {
 		err := writeKeepFilesToDisk()
 		if err != nil {
 			logError("Error writing keepFiles to disk:", err)
 		}
 	}
 
-	// Remove downloaded files if keep is 0
-	if config.Keep == 0 {
+	// Remove downloaded files if retainDownload is 0
+	if config.RetainDownload == 0 {
 		removeDownloadedFiles()
 	}
 
@@ -395,17 +409,134 @@ func processStreams(streams []Stream, stats map[string]int, keepFiles map[string
 	os.MkdirAll(tvShowsDir, os.ModePerm)
 	os.MkdirAll(moviesDir, os.ModePerm)
 
+	// Log excludeGroups and includeGroups for debugging
+	logMessage(fmt.Sprintf("Exclude Groups: %v", excludeGroups))
+	logMessage(fmt.Sprintf("Include Groups: %v", includeGroups))
+
 	for _, stream := range streams {
+		groupTitle := strings.ToLower(strings.TrimSpace(stream.GroupTitle))
+		if groupTitle == "" {
+			groupTitle = defaultGroup
+		}
+
+		// Log the current group being processed
+		logDebug(fmt.Sprintf("Processing group: %s", groupTitle))
+
+		// Skip excluded groups
+		if contains(excludeGroups, groupTitle) {
+			logDebug(fmt.Sprintf("Excluding group: %s", groupTitle))
+			continue
+		}
+
+		// Include only specified groups
+		if len(includeGroups) > 0 && !contains(includeGroups, groupTitle) {
+			logDebug(fmt.Sprintf("Not in include group: %s", groupTitle))
+			continue
+		}
+
 		if tvShowRegex.MatchString(stream.TvgName) {
 			// It's a TV show
-			processTVShow(stream, tvShowsDir, tvShowRegex, keepFiles, stats)
+			processTVShow(stream, tvShowsDir, groupTitle, tvShowRegex, keepFiles, stats)
 		} else {
 			// It's a movie
-			processMovie(stream, moviesDir, keepFiles, stats)
+			processMovie(stream, moviesDir, groupTitle, keepFiles, stats)
 		}
 	}
 
 	return stats
+}
+
+func contains(slice []string, item string) bool {
+	item = strings.ToLower(strings.TrimSpace(item))
+	for _, s := range slice {
+		logDebug(fmt.Sprintf("Checking if %s equals %s", strings.TrimSpace(s), item))
+		if strings.EqualFold(strings.TrimSpace(s), item) {
+			return true
+		}
+	}
+	return false
+}
+
+func removeEmptyDirs(rootDir string, stats map[string]int, limit int) {
+	// Create a case-insensitive map for keepFiles
+	ciKeepFiles := make(map[string]bool)
+	for k := range keepFiles {
+		ciKeepFiles[strings.ToLower(k)] = true
+	}
+
+	deletions := 0
+
+	filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			logError("Error accessing path", path, ":", err)
+			return err
+		}
+		if d.IsDir() {
+			// Remove files that are not in the ciKeepFiles map
+			files, err := ioutil.ReadDir(path)
+			if err != nil {
+				logError("Error reading directory:", err)
+				return err
+			}
+			for _, file := range files {
+				if deletions >= limit {
+					logMessage("Deletion limit reached.")
+					return filepath.SkipDir
+				}
+
+				filePath := filepath.Join(path, file.Name())
+				if !file.IsDir() && filepath.Ext(file.Name()) == ".strm" {
+					// Convert filePath to lowercase for case-insensitive comparison
+					lowerCaseFilePath := strings.ToLower(filePath)
+					if !ciKeepFiles[lowerCaseFilePath] {
+						logMessage(fmt.Sprintf("Removing .strm file: %s", filePath))
+						if err := os.Remove(filePath); err != nil {
+							logError("Error removing file:", err)
+						} else {
+							removedStrmFiles++
+							stats["removedStrmFiles"]++
+							deletions++
+						}
+					} else {
+						logDebug(fmt.Sprintf("Keeping .strm file: %s", filePath))
+					}
+				}
+			}
+
+			// Check if the directory is empty and remove it if it is
+			isEmpty, err := isDirEmpty(path)
+			if err != nil {
+				logError("Error checking directory:", err)
+				return err
+			}
+			if isEmpty && path != rootDir {
+				logMessage(fmt.Sprintf("Removing empty directory: %s", path))
+				if err := os.Remove(path); err != nil {
+					logError("Error removing directory:", err)
+				} else {
+					removedEmptyDirs++
+					stats["removedEmptyDirs"]++
+				}
+				return filepath.SkipDir // Skip further processing of this directory
+			}
+		}
+		return nil
+	})
+}
+
+func isDirEmpty(dir string) (bool, error) {
+	logDebug(fmt.Sprintf("Checking if directory is empty: %s", dir))
+	f, err := os.Open(dir)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	_, err = f.Readdir(1)
+	if err == io.EOF {
+		return true, nil
+	}
+	return false, err
 }
 
 func loadConfig(configFile string) (*Config, error) {
@@ -428,6 +559,17 @@ func loadConfig(configFile string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Trim spaces for excludeGroup and includeGroup
+	config.ExcludeGroup = strings.TrimSpace(config.ExcludeGroup)
+	config.IncludeGroup = strings.TrimSpace(config.IncludeGroup)
+	config.ExcludeGroup = strings.ReplaceAll(config.ExcludeGroup, ", ", ",")
+	config.IncludeGroup = strings.ReplaceAll(config.IncludeGroup, ", ", ",")
+
+	// Ensure proper trimming and splitting of excludeGroup and includeGroup
+	excludeGroups = filterEmptyStrings(strings.Split(strings.TrimSpace(config.ExcludeGroup), ","))
+	includeGroups = filterEmptyStrings(strings.Split(strings.TrimSpace(config.IncludeGroup), ","))
+
 	// Check for any invalid keys in the JSON file
 	var raw map[string]interface{}
 	if err := json.Unmarshal(file, &raw); err != nil {
@@ -442,19 +584,23 @@ func loadConfig(configFile string) (*Config, error) {
 }
 
 var configMap = map[string]struct{}{
-	"name":         {},
-	"logLevel":     {},
-	"tvShowsDir":   {},
-	"moviesDir":    {},
-	"jsonURLs":     {},
-	"m3uURLs":      {},
-	"logFile":      {},
-	"fileType":     {},
-	"workingDir":   {},
-	"logDir":       {},
-	"excludeGroup": {},
-	"includeGroup": {},
-	"keepDir":      {},
+	"name":           {},
+	"logLevel":       {},
+	"tvShowsDir":     {},
+	"moviesDir":      {},
+	"jsonURLs":       {},
+	"m3uURLs":        {},
+	"logFile":        {},
+	"fileType":       {},
+	"workingDir":     {},
+	"logDir":         {},
+	"downloadDir":    {},
+	"retainDownload": {},
+	"useGroup":       {},
+	"defaultGroup":   {},
+	"limitDelete":    {},
+	"excludeGroup":   {},
+	"includeGroup":   {},
 }
 
 func saveConfigToFile(config *Config) error {
@@ -556,7 +702,7 @@ func processM3U(m3uURL string, index int, stats map[string]int) ([]Stream, error
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading m3u file: %v", err)
+		return nil, fmt.Errorf("error reading M3U file: %v", err)
 	}
 
 	return streams, nil
@@ -589,7 +735,7 @@ func isValidStrmType(url string) bool {
 	return false
 }
 
-func processTVShow(stream Stream, tvShowsDir string, tvShowRegex *regexp.Regexp, keepFiles map[string]bool, stats map[string]int) {
+func processTVShow(stream Stream, tvShowsDir string, groupTitle string, tvShowRegex *regexp.Regexp, keepFiles map[string]bool, stats map[string]int) {
 	// Extract show name and season/episode info
 	parts := tvShowRegex.FindString(stream.TvgName)
 	if parts == "" {
@@ -602,7 +748,12 @@ func processTVShow(stream Stream, tvShowsDir string, tvShowRegex *regexp.Regexp,
 	season := seasonEpisode[:3] // Extract "Sxx"
 
 	// Create directory structure
-	showDir := filepath.Join(tvShowsDir, showName, season)
+	var showDir string
+	if useGroup == 1 {
+		showDir = filepath.Join(tvShowsDir, groupTitle, showName, season)
+	} else {
+		showDir = filepath.Join(tvShowsDir, showName, season)
+	}
 	if _, err := os.Stat(showDir); os.IsNotExist(err) {
 		logMessage(fmt.Sprintf("Creating directory: %s", showDir))
 		err = os.MkdirAll(showDir, os.ModePerm)
@@ -623,9 +774,14 @@ func processTVShow(stream Stream, tvShowsDir string, tvShowRegex *regexp.Regexp,
 	logDebug(fmt.Sprintf("Keep STRM File: %s", strmFilePath))
 }
 
-func processMovie(stream Stream, moviesDir string, keepFiles map[string]bool, stats map[string]int) {
+func processMovie(stream Stream, moviesDir string, groupTitle string, keepFiles map[string]bool, stats map[string]int) {
 	// Create directory structure
-	movieDir := filepath.Join(moviesDir, sanitizeFileName(normalizeName(stream.TvgName)))
+	var movieDir string
+	if useGroup == 1 {
+		movieDir = filepath.Join(moviesDir, groupTitle, sanitizeFileName(normalizeName(stream.TvgName)))
+	} else {
+		movieDir = filepath.Join(moviesDir, sanitizeFileName(normalizeName(stream.TvgName)))
+	}
 	if _, err := os.Stat(movieDir); os.IsNotExist(err) {
 		logMessage(fmt.Sprintf("Creating directory: %s", movieDir))
 		err = os.MkdirAll(movieDir, os.ModePerm)
@@ -660,86 +816,9 @@ func createOrUpdateStrmFile(filePath, url string) {
 	}
 }
 
-func removeEmptyDirs(rootDir string, stats map[string]int, limit int) {
-	// Create a case-insensitive map for keepFiles
-	ciKeepFiles := make(map[string]bool)
-	for k := range keepFiles {
-		ciKeepFiles[strings.ToLower(k)] = true
-	}
-
-	deletions := 0
-
-	filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			// Remove files that are not in the ciKeepFiles map
-			files, err := ioutil.ReadDir(path)
-			if err != nil {
-				logError("Error reading directory:", err)
-				return err
-			}
-			for _, file := range files {
-				if deletions >= limit {
-					logMessage("Deletion limit reached.")
-					return filepath.SkipDir
-				}
-
-				filePath := filepath.Join(path, file.Name())
-				if !file.IsDir() && filepath.Ext(file.Name()) == ".strm" {
-					// Convert filePath to lowercase for case-insensitive comparison
-					lowerCaseFilePath := strings.ToLower(filePath)
-					if !ciKeepFiles[lowerCaseFilePath] {
-						logMessage(fmt.Sprintf("Removing .strm file: %s", filePath))
-						if err := os.Remove(filePath); err != nil {
-							logError("Error removing file:", err)
-						} else {
-							removedStrmFiles++
-							stats["removedStrmFiles"]++
-							deletions++
-						}
-					}
-				}
-			}
-
-			// Check if the directory is empty and remove it if it is
-			isEmpty, err := isDirEmpty(path)
-			if err != nil {
-				logError("Error checking directory:", err)
-				return err
-			}
-			if isEmpty && path != rootDir {
-				logMessage(fmt.Sprintf("Removing empty directory: %s", path))
-				if err := os.Remove(path); err != nil {
-					logError("Error removing directory:", err)
-				} else {
-					removedEmptyDirs++
-					stats["removedEmptyDirs"]++
-				}
-			}
-		}
-		return nil
-	})
-}
-
-func isDirEmpty(dir string) (bool, error) {
-	f, err := os.Open(dir)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-
-	_, err = f.Readdir(1)
-	if err == io.EOF {
-		return true, nil
-	}
-	return false, err
-}
-
 func sanitizeFileName(name string) string {
 	// Replace invalid characters with an underscore and trim spaces
-	invalidChars := regexp.MustCompile(`[<>:"/\\|?*\[\],']`)
+	invalidChars := regexp.MustCompile(`[<>:"/\\|?*[\]#%&{}$!'"+=@~` + "`" + `]`)
 	sanitized := strings.TrimSpace(invalidChars.ReplaceAllString(name, "_"))
 	// Remove trailing dots and colons, then replace multiple dots with single dot
 	sanitized = strings.TrimRight(sanitized, "_.:")
@@ -808,16 +887,20 @@ Options:
         Working directory (default: current working directory)
   -logDir string
         Directory for log files (default: workingDir/Log)
-  -keep int
+  -retainDownload int
         Set to 1 to keep downloaded files, 0 to delete (default: 0)
-  -keepDir string
+  -downloadDir string
         Directory to keep downloaded files (overrides default)
-  -excludeGroup string
-        Comma separated list of groups to exclude (default: null)
-  -includeGroup string
-        Comma separated list of groups to include (default: null)
   -limitDelete int
-        Maximum number of .strm files to delete (default: 25)		
+        Maximum number of .strm files to delete (default: 25)
+  -useGroup int
+        Set to 1 to use group title in directory structure, 0 to not use (default: 0)
+  -defaultGroup string
+        Default group title if useGroup is set and group is not specified (default: Dummy)
+  -excludeGroup string
+        Comma separated list of groups to exclude
+  -includeGroup string
+        Comma separated list of groups to include
   -version
         Display the version information
   -help
@@ -887,28 +970,30 @@ func createDefaultConfig() {
 	}
 
 	defaultConfig := &Config{
-		Name:         "Default",
-		LogLevel:     1,
-		Keep:         0,
-		LimitDelete:  25,
-		KeepDir:      "",
-		TvShowsDir:   tvShowsDir,
-		MoviesDir:    moviesDir,
-		JsonURLs:     []string{},
-		M3UURLs:      []string{},
-		LogFile:      "vod_log.txt",
-		FileType:     "avi,flv,m4v,mkv,mkv2,mkv5,mkvv,mp4,mp41,mp42,mp44,mpg,wmv",
-		WorkingDir:   workingDir,
-		LogDir:       logDir,
-		ExcludeGroup: "",
-		IncludeGroup: "",
+		Name:           "Default",
+		LogLevel:       1,
+		RetainDownload: 0,
+		LimitDelete:    25,
+		DownloadDir:    "",
+		TvShowsDir:     tvShowsDir,
+		MoviesDir:      moviesDir,
+		JsonURLs:       []string{},
+		M3UURLs:        []string{},
+		LogFile:        "vod_log.txt",
+		FileType:       "avi,flv,m4v,mkv,mkv2,mkv5,mkvv,mp4,mp41,mp42,mp44,mpg,wmv",
+		WorkingDir:     workingDir,
+		LogDir:         logDir,
+		UseGroup:       0,
+		DefaultGroup:   "Dummy",
+		ExcludeGroup:   "",
+		IncludeGroup:   "",
 	}
 
 	defaultConfigPath := "sample_config.json"
 	if _, err := os.Stat(defaultConfigPath); os.IsNotExist(err) {
 		configData, _ := json.MarshalIndent(defaultConfig, "", "  ")
 		ioutil.WriteFile(defaultConfigPath, configData, 0644)
-		fmt.Println("Default configuration created at default_config.json")
+		fmt.Println("Default configuration created at sample_config.json")
 	}
 }
 
