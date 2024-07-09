@@ -70,11 +70,11 @@ Working directory (default: current working directory)
 
 Directory for log files (default: workingDir/Log)
 
-- keep int
+- retainDownload int
 
 Set to 1 to keep downloaded files, 0 to delete (default: 0)
 
-- keepDir string
+- downloadDir string
 
 Directory to keep downloaded files (overrides default)
 
