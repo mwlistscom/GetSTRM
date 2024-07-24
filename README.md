@@ -6,7 +6,8 @@ The source can be 1 or more m3u or STRM export from RockMyM3u.com or multiple of
 
 GetSTRM will delete empty directories and streams that are no longer in the provider list.
 
-For this reason, do not use this with existing directories with media files.
+For this reason, do not use this with existing directories with media files, and do not run 
+multiple times with different M3U/STRM. 
 
 Need help ? Contact us on https://www.facebook.com/rockmym3u or email help@rockmym3u.com
 
